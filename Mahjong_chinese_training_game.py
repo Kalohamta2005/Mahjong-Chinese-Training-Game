@@ -502,6 +502,201 @@ class Tile:
         return False
 
 
+class LoginScreen:
+
+    def __init__(self, sw, sh, fonts, app):
+        self.sw = sw
+        self.sh = sh
+        self.fonts = fonts
+        self.app = app
+
+        w, h = int(sw * 0.5), int(sh * 0.52)
+        self.rect = pygame.Rect(0, 0, w, h)
+        self.rect.center = (sw // 2, sh // 2 + int(sh * 0.03))
+
+        close_size = int(sw * 0.025)
+        self.btn_panel_exit = Button(
+            self.rect.right - close_size - 14,
+            self.rect.top + 14,
+            close_size,
+            close_size,
+            "X",
+            fonts['small'],
+            EXIT_BASE,
+            EXIT_HOVER,
+            app.quit_game
+        )
+
+        input_w = int(w * 0.72)
+        input_h = int(h * 0.16)
+        self.input_rect = pygame.Rect(0, 0, input_w, input_h)
+        self.input_rect.center = (self.rect.centerx, self.rect.top + int(h * 0.42))
+        self.input_active = True
+
+        btn_w = int(w * 0.48)
+        btn_h = int(h * 0.14)
+        self.btn_submit = Button(
+            self.rect.centerx - btn_w // 2,
+            self.rect.top + int(h * 0.60),
+            btn_w,
+            btn_h,
+            "",
+            fonts['medium'],
+            SOFT_GREEN,
+            DARK_SOFT_GREEN,
+            app.try_login
+        )
+
+        cw, ch = int(sw * 0.52), int(sh * 0.36)
+        self.confirm_rect = pygame.Rect(0, 0, cw, ch)
+        self.confirm_rect.center = (sw // 2, sh // 2)
+
+        c_btn_w = int(cw * 0.32)
+        c_btn_h = int(ch * 0.22)
+        self.btn_confirm_yes = Button(
+            self.confirm_rect.centerx - c_btn_w - 16,
+            self.confirm_rect.bottom - c_btn_h - int(ch * 0.12),
+            c_btn_w,
+            c_btn_h,
+            "",
+            fonts['medium'],
+            GREEN,
+            DARK_GREEN,
+            app.confirm_create_user
+        )
+        self.btn_confirm_no = Button(
+            self.confirm_rect.centerx + 16,
+            self.confirm_rect.bottom - c_btn_h - int(ch * 0.12),
+            c_btn_w,
+            c_btn_h,
+            "",
+            fonts['medium'],
+            RED,
+            DARK_RED,
+            app.cancel_create_user
+        )
+
+        self.update_language()
+
+    def update_language(self):
+        tr = self.app.translations[self.app.language]
+        self.btn_submit.text = tr["login_enter"]
+        self.btn_confirm_yes.text = tr["yes"]
+        self.btn_confirm_no.text = tr["no"]
+
+    def draw(self, surface):
+        tr = self.app.translations[self.app.language]
+
+        title_text = tr["login_title"]
+        title_surf = self.fonts['title'].render(title_text, True, TITLE_COLOR)
+        title_shadow = self.fonts['title'].render(title_text, True, WHITE)
+        title_rect = title_surf.get_rect(center=(self.sw // 2, int(self.sh * 0.15)))
+        surface.blit(title_shadow, (title_rect.x + 2, title_rect.y + 2))
+        surface.blit(title_surf, title_rect)
+
+        pygame.draw.rect(surface, MODAL_BG, self.rect, border_radius=15)
+        pygame.draw.rect(surface, BLACK, self.rect, 3, border_radius=15)
+
+        panel_header = self.fonts['large'].render(tr["login_panel_header"], True, WHITE)
+        header_rect = panel_header.get_rect(center=(self.rect.centerx, self.rect.top + int(self.rect.height * 0.18)))
+        surface.blit(panel_header, header_rect)
+
+        pygame.draw.rect(surface, DEEP_GREEN, self.input_rect, border_radius=10)
+        border_col = GOLD_OUTLINE if (self.input_active and not self.app.login_pending_confirm) else DARK_GRAY
+        pygame.draw.rect(surface, border_col, self.input_rect, 3, border_radius=10)
+
+        cursor_visible = (pygame.time.get_ticks() // 500) % 2 == 0 and self.input_active and not self.app.login_pending_confirm
+        if self.app.login_input:
+            display_str = self.app.login_input + ("|" if cursor_visible else "")
+            text_surf = self.fonts['medium'].render(display_str, True, WHITE)
+        else:
+            if cursor_visible:
+                text_surf = self.fonts['medium'].render("|", True, WHITE)
+            else:
+                text_surf = self.fonts['medium'].render(tr["login_placeholder"], True, GRAY)
+
+        text_rect = text_surf.get_rect(center=self.input_rect.center)
+        surface.blit(text_surf, text_rect)
+
+        self.btn_submit.draw(surface)
+        self.btn_panel_exit.draw(surface)
+
+        if self.app.login_error_msg:
+            status_surf = self.fonts['small'].render(self.app.login_error_msg, True, RED)
+            status_rect = status_surf.get_rect(center=(self.rect.centerx, self.rect.bottom - int(self.rect.height * 0.11)))
+            surface.blit(status_surf, status_rect)
+
+        if self.app.login_pending_confirm:
+            surface.blit(self.app.overlay, (0, 0))
+            pygame.draw.rect(surface, MODAL_BG, self.confirm_rect, border_radius=15)
+            pygame.draw.rect(surface, BLACK, self.confirm_rect, 3, border_radius=15)
+
+            prompt_text = tr["login_not_found"].format(user=self.app.login_input.strip())
+            lines = prompt_text.split('\n')
+            line_h = self.fonts['medium'].get_linesize()
+            start_y = self.confirm_rect.top + int(self.confirm_rect.height * 0.24)
+
+            for i, line in enumerate(lines):
+                line_surf = self.fonts['medium'].render(line, True, WHITE)
+                line_rect = line_surf.get_rect(center=(self.confirm_rect.centerx, start_y + i * line_h))
+                surface.blit(line_surf, line_rect)
+
+            self.btn_confirm_yes.draw(surface)
+            self.btn_confirm_no.draw(surface)
+
+    def handle_event(self, event, sound_mgr=None):
+        if self.app.login_pending_confirm:
+            if event.type == pygame.KEYDOWN:
+                if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                    self.app.confirm_create_user()
+                    return True
+                elif event.key == pygame.K_ESCAPE:
+                    self.app.cancel_create_user()
+                    return True
+            self.btn_confirm_yes.handle_event(event, sound_mgr)
+            self.btn_confirm_no.handle_event(event, sound_mgr)
+            return True
+
+        if self.btn_panel_exit.handle_event(event, sound_mgr):
+            return True
+
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            self.input_active = self.input_rect.collidepoint(event.pos)
+
+        if self.btn_submit.handle_event(event, sound_mgr):
+            return True
+
+        if event.type == pygame.KEYDOWN and self.input_active:
+            if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                if sound_mgr:
+                    sound_mgr.play_sfx('btn_click')
+                self.app.try_login()
+                return True
+            elif event.key == pygame.K_BACKSPACE:
+                self.app.login_input = self.app.login_input[:-1]
+                self.app.login_error_msg = ""
+                return True
+            elif event.unicode:
+                ch = event.unicode
+                if ch.isprintable() and len(self.app.login_input) < 16:
+                    if not pygame.key.get_repeat():
+                        pass
+
+        if event.type == pygame.TEXTINPUT and self.input_active:
+            for ch in event.text:
+                if len(self.app.login_input) >= 16:
+                    break
+                if self.app.is_valid_login_char(ch):
+                    self.app.login_input += ch
+                    self.app.login_error_msg = ""
+                else:
+                    tr = self.app.translations[self.app.language]
+                    self.app.login_error_msg = tr["login_invalid_chars"]
+            return True
+
+        return False
+
+
 class ProgressMenu:
     def __init__(self, sw, sh, fonts, close_action, app):
         self.sw = sw
@@ -583,7 +778,7 @@ class ProgressMenu:
 
 class SettingsMenu:
     def __init__(self, sw, sh, fonts, close_action, sound_mgr, app):
-        w, h = int(sw * 0.6), int(sh * 0.7)
+        w, h = int(sw * 0.6), int(sh * 0.78)
         self.rect = pygame.Rect(0, 0, w, h)
         self.rect.center = (sw // 2, sh // 2)
         self.fonts = fonts
@@ -594,14 +789,15 @@ class SettingsMenu:
 
         cx = self.rect.centerx
         btn_w = int(w * 0.55)
-        btn_h = int(h * 0.1)
+        btn_h = int(h * 0.088)
         lang_btn_w = int(w * 0.25)
 
-        y_music = self.rect.top + h * 0.2
-        y_sfx = self.rect.top + h * 0.35
-        y_lang_btns = self.rect.top + h * 0.57
-        y_clear = self.rect.top + h * 0.72
-        y_close = self.rect.bottom - btn_h - int(h * 0.05)
+        y_music = self.rect.top + h * 0.17
+        y_sfx = self.rect.top + h * 0.29
+        y_lang_btns = self.rect.top + h * 0.48
+        y_clear = self.rect.top + h * 0.61
+        y_logout = self.rect.top + h * 0.73
+        y_close = self.rect.bottom - btn_h - int(h * 0.04)
 
         self.btn_music = Button(cx - btn_w // 2, y_music, btn_w, btn_h, "", fonts['medium'], BLUE, DARK_BLUE, self.toggle_music)
         self.btn_sfx = Button(cx - btn_w // 2, y_sfx, btn_w, btn_h, "", fonts['medium'], BLUE, DARK_BLUE, self.toggle_sfx)
@@ -610,6 +806,7 @@ class SettingsMenu:
         self.btn_lang_ru = Button(cx + 10, y_lang_btns, lang_btn_w, btn_h, "", fonts['medium'], GRAY, DARK_GRAY, lambda: self.set_lang("ru"))
 
         self.btn_clear = Button(cx - btn_w // 2, y_clear, btn_w, btn_h, "", fonts['medium'], RED, DARK_RED, self.ask_clear)
+        self.btn_logout = Button(cx - btn_w // 2, y_logout, btn_w, btn_h, "", fonts['medium'], BROWN_BASE, BROWN_HOVER, self.app.logout)
         self.btn_close = Button(cx - btn_w // 2, y_close, btn_w, btn_h, "", fonts['medium'], BLUE, DARK_BLUE, close_action)
 
         self.btn_yes = Button(cx - lang_btn_w - 10, self.rect.centery + 20, lang_btn_w, btn_h, "", fonts['medium'], RED, DARK_RED, self.confirm_clear)
@@ -624,6 +821,7 @@ class SettingsMenu:
         self.btn_lang_en.text = tr["english"]
         self.btn_lang_ru.text = tr["russian"]
         self.btn_clear.text = tr["clear_progress"]
+        self.btn_logout.text = tr["logout"]
         self.btn_close.text = tr["close"]
         self.btn_yes.text = tr["yes"]
         self.btn_no.text = tr["no"]
@@ -670,14 +868,14 @@ class SettingsMenu:
 
         if not self.confirming_clear:
             title_surf = self.fonts['large'].render(tr["settings"], True, WHITE)
-            title_rect = title_surf.get_rect(center=(self.rect.centerx, self.rect.top + self.rect.height * 0.1))
+            title_rect = title_surf.get_rect(center=(self.rect.centerx, self.rect.top + self.rect.height * 0.08))
             surface.blit(title_surf, title_rect)
 
             self.btn_music.draw(surface)
             self.btn_sfx.draw(surface)
 
             lang_surf = self.fonts['small'].render(tr["language"], True, WHITE)
-            lang_rect = lang_surf.get_rect(center=(self.rect.centerx, self.rect.top + self.rect.height * 0.52))
+            lang_rect = lang_surf.get_rect(center=(self.rect.centerx, self.rect.top + self.rect.height * 0.43))
             surface.blit(lang_surf, lang_rect)
 
             if self.app.language == "en":
@@ -690,6 +888,7 @@ class SettingsMenu:
             self.btn_lang_en.draw(surface)
             self.btn_lang_ru.draw(surface)
             self.btn_clear.draw(surface)
+            self.btn_logout.draw(surface)
             self.btn_close.draw(surface)
         else:
             warn_title = self.fonts['large'].render(tr["clear_confirm"], True, RED)
@@ -710,6 +909,7 @@ class SettingsMenu:
             self.btn_lang_en.handle_event(event, sound_mgr)
             self.btn_lang_ru.handle_event(event, sound_mgr)
             self.btn_clear.handle_event(event, sound_mgr)
+            self.btn_logout.handle_event(event, sound_mgr)
             self.btn_close.handle_event(event, sound_mgr)
         else:
             self.btn_yes.handle_event(event, sound_mgr)
@@ -746,10 +946,16 @@ class GameApp:
         pygame.display.set_caption("Mahjong: Chinese Training Game")
         self.clock = pygame.time.Clock()
         self.running = True
-        self.state = 'MAIN_MENU'
+        self.state = 'LOGIN'
 
         self.sound_mgr = SoundManager()
         self.language = "en"
+
+        self.current_user = None
+        self.login_input = ""
+        self.login_cursor_time = 0
+        self.login_pending_confirm = False
+        self.login_error_msg = ""
 
         self.translations = {
             "en": {
@@ -768,6 +974,7 @@ class GameApp:
                 "yes": "Yes",
                 "no": "No",
                 "close": "Close",
+                "logout": "Log out",
                 "my_progress": "My progress",
                 "progress_title": "SEMANTIC COMPONENTS OF CHINESE CHARACTERS",
                 "back": "Back",
@@ -777,7 +984,17 @@ class GameApp:
                 "continue_training": "Continue training",
                 "full_victory_title": "Congratulations!",
                 "full_victory_text": "You have mastered all semantic components!",
-                "max_progress_message": "Game is already fully completed. You are great!\nTo continue playing, reset progress in Settings."
+                "max_progress_message": "Game is already fully completed. You are great!\nTo continue playing, reset progress in Settings.",
+                "login_title": "Log in / Вход",
+                "login_panel_header": "Player Account",
+                "login_placeholder": "Enter username...",
+                "login_create": "Create",
+                "login_enter": "Log in / Create",
+                "login_exists": "Profile loaded",
+                "login_not_found": "User '{user}' not found.\nCreate a new profile?",
+                "login_created": "New profile created",
+                "login_name_empty": "Username cannot be empty",
+                "login_invalid_chars": "Only letters, numbers, '_' and '-' are allowed"
             },
             "ru": {
                 "start": "Начать",
@@ -795,6 +1012,7 @@ class GameApp:
                 "yes": "Да",
                 "no": "Нет",
                 "close": "Закрыть",
+                "logout": "Сменить пользователя",
                 "my_progress": "Мой прогресс",
                 "progress_title": "СМЫСЛОВЫЕ КОМПОНЕНТЫ КИТАЙСКИХ ИЕРОГЛИФОВ",
                 "back": "Назад",
@@ -804,7 +1022,17 @@ class GameApp:
                 "continue_training": "Продолжить тренировку",
                 "full_victory_title": "Поздравляем!",
                 "full_victory_text": "Вы освоили все смысловые компоненты!",
-                "max_progress_message": "Игра уже пройдена. Вы молодец!\nЧтобы продолжить играть, сбросьте прогресс в Настройках."
+                "max_progress_message": "Игра уже пройдена. Вы молодец!\nЧтобы продолжить играть, сбросьте прогресс в Настройках.",
+                "login_title": "Вход / Log in",
+                "login_panel_header": "Аккаунт игрока",
+                "login_placeholder": "Введите логин...",
+                "login_create": "Создать",
+                "login_enter": "Войти / Создать",
+                "login_exists": "Профиль загружен",
+                "login_not_found": "Пользователь «{user}» не найден.\nСоздать нового?",
+                "login_created": "Новый профиль создан",
+                "login_name_empty": "Логин не может быть пустым",
+                "login_invalid_chars": "Допустимы только буквы, цифры, '_' и '-'"
             }
         }
 
@@ -849,8 +1077,6 @@ class GameApp:
 
         self.chars_list = list(self.char_dict.keys())
         self.progress = {char: 0 for char in self.chars_list}
-
-        self.load_progress()
 
         self.fonts = {
             'title': pygame.font.SysFont('arial', int(self.sw / 25), bold=True),
@@ -915,6 +1141,7 @@ class GameApp:
                                        "", self.fonts['large'], (124, 84, 55), (144, 104, 75),
                                        self.continue_training_action)
 
+        self.login_screen = LoginScreen(self.sw, self.sh, self.fonts, self)
         self.progress_menu = ProgressMenu(self.sw, self.sh, self.fonts, self.close_modals, self)
         self.settings_menu = SettingsMenu(self.sw, self.sh, self.fonts, self.close_modals, self.sound_mgr, self)
 
@@ -924,6 +1151,117 @@ class GameApp:
         self.overlay.fill(OVERLAY_COLOR)
 
         self.tiles = []
+
+        self.enter_login_screen()
+
+    def is_valid_login_char(self, ch):
+        return ch.isalnum() or ch in ('_', '-')
+
+    def is_valid_username(self, username):
+        if not username or username != username.strip():
+            return False
+        forbidden = set('/\\:*?"<>|')
+        if any(c in forbidden for c in username):
+            return False
+        return all(self.is_valid_login_char(c) for c in username)
+
+    def get_user_file_path(self, username):
+        return os.path.join(GAME_DATA_DIR, f"{username}.json")
+
+    def enter_login_screen(self):
+        self.state = 'LOGIN'
+        self.login_pending_confirm = False
+        self.login_error_msg = ""
+        self.login_cursor_time = pygame.time.get_ticks()
+        self.sound_mgr.stop_bgm()
+        try:
+            pygame.key.set_text_input_rect(self.login_screen.input_rect)
+            pygame.key.start_text_input()
+        except Exception:
+            pass
+
+    def exit_login_screen(self):
+        try:
+            pygame.key.stop_text_input()
+        except Exception:
+            pass
+
+    def save_user_file(self, username, data):
+        if not username:
+            return
+        if not os.path.exists(GAME_DATA_DIR):
+            os.makedirs(GAME_DATA_DIR, exist_ok=True)
+        save_file = self.get_user_file_path(username)
+        try:
+            with open(save_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=4)
+        except Exception as e:
+            print(f"Failed to save user file '{username}': {e}")
+
+    def load_user_file(self, username):
+        save_file = self.get_user_file_path(username)
+        if not os.path.exists(save_file):
+            return None
+        try:
+            with open(save_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Failed to load user file '{username}': {e}")
+            return None
+
+    def try_login(self):
+        tr = self.translations[self.language]
+        raw_name = self.login_input
+
+        if not raw_name or not raw_name.strip():
+            self.login_error_msg = tr["login_name_empty"]
+            return
+
+        if not self.is_valid_username(raw_name):
+            self.login_error_msg = tr["login_invalid_chars"]
+            return
+
+        username = raw_name.strip()
+        user_path = self.get_user_file_path(username)
+
+        if os.path.exists(user_path):
+            self.current_user = username
+            self.load_progress()
+            self.update_language()
+            self.exit_login_screen()
+            self.state = 'MAIN_MENU'
+            self.sound_mgr.play_bgm('menu')
+        else:
+            self.login_error_msg = ""
+            self.login_pending_confirm = True
+
+    def confirm_create_user(self):
+        username = self.login_input.strip()
+        if not self.is_valid_username(username):
+            self.login_pending_confirm = False
+            return
+
+        self.current_user = username
+        self.language = "en"
+        self.progress = {char: 0 for char in self.chars_list}
+        self.save_progress()
+        self.update_language()
+
+        self.login_pending_confirm = False
+        self.exit_login_screen()
+        self.state = 'MAIN_MENU'
+        self.sound_mgr.play_bgm('menu')
+
+    def cancel_create_user(self):
+        self.login_pending_confirm = False
+
+    def logout(self):
+        self.save_progress()
+        self.current_user = None
+        self.login_input = ""
+        self.progress = {char: 0 for char in self.chars_list}
+        self.settings_menu.confirming_clear = False
+        self.enter_login_screen()
 
     def update_language(self):
         tr = self.translations[self.language]
@@ -942,6 +1280,8 @@ class GameApp:
         self.btn_hint.font = new_vert_font
         self.btn_restart.font = new_vert_font
 
+        if hasattr(self, 'login_screen'):
+            self.login_screen.update_language()
         if hasattr(self, 'settings_menu'):
             self.settings_menu.update_language()
         if hasattr(self, 'progress_menu'):
@@ -957,35 +1297,32 @@ class GameApp:
         self.full_victory_sound_started = True
 
     def load_progress(self):
-        save_file = os.path.join(GAME_DATA_DIR, "progress.json")
+        self.progress = {char: 0 for char in self.chars_list}
+        self.language = "en"
 
-        if os.path.exists(save_file):
-            try:
-                with open(save_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    self.language = data.get("language", "en")
-                    for char, val in data.items():
-                        if char in self.progress:
-                            self.progress[char] = min(50, max(0, int(val)))
-            except Exception as e:
-                print(f"Failed to load progress: {e}")
+        if not self.current_user:
+            return
+
+        data = self.load_user_file(self.current_user)
+        if data is not None:
+            lang = data.get("language", "en")
+            self.language = lang if lang in self.translations else "en"
+            for char, val in data.items():
+                if char in self.progress:
+                    try:
+                        self.progress[char] = min(50, max(0, int(val)))
+                    except (ValueError, TypeError):
+                        self.progress[char] = 0
         else:
-            print("Файл сохранения не найден — создан новый")
             self.save_progress()
 
     def save_progress(self):
-        if not os.path.exists(GAME_DATA_DIR):
-            os.makedirs(GAME_DATA_DIR, exist_ok=True)
-            print(f"Создана папка {GAME_DATA_DIR}")
+        if not self.current_user:
+            return
 
-        save_file = os.path.join(GAME_DATA_DIR, "progress.json")
-        try:
-            data_to_save = self.progress.copy()
-            data_to_save["language"] = self.language
-            with open(save_file, 'w', encoding='utf-8') as f:
-                json.dump(data_to_save, f, ensure_ascii=False, indent=4)
-        except Exception as e:
-            print(f"Failed to save progress: {e}")
+        data_to_save = self.progress.copy()
+        data_to_save["language"] = self.language
+        self.save_user_file(self.current_user, data_to_save)
 
     def is_tile_available(self, tile):
         return is_tile_available_in_list(tile, self.tiles)
@@ -1145,6 +1482,7 @@ class GameApp:
         self.state = 'MAIN_MENU'
 
     def quit_game(self):
+        self.exit_login_screen()
         self.sound_mgr.play_sfx('tile_click')
         pygame.time.wait(150)
         self.save_progress()
@@ -1156,13 +1494,18 @@ class GameApp:
                 self.quit_game()
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
+                    if self.state == 'LOGIN' and self.login_pending_confirm:
+                        self.cancel_create_user()
+                        continue
                     self.quit_game()
 
-            if self.state in ('MAIN_MENU', 'PLAYING', 'VICTORY'):
+            if self.state in ('LOGIN', 'MAIN_MENU', 'PLAYING', 'VICTORY'):
                 if self.btn_exit.handle_event(event, self.sound_mgr):
                     continue
 
-            if self.state == 'MAIN_MENU':
+            if self.state == 'LOGIN':
+                self.login_screen.handle_event(event, self.sound_mgr)
+            elif self.state == 'MAIN_MENU':
                 self.btn_start.handle_event(event, self.sound_mgr)
                 self.btn_settings.handle_event(event, self.sound_mgr)
                 self.btn_progress.handle_event(event, self.sound_mgr)
@@ -1227,6 +1570,10 @@ class GameApp:
 
     def update(self):
         current_time = pygame.time.get_ticks()
+
+        if self.state == 'LOGIN':
+            self.login_cursor_time = current_time
+            return
 
         if self.max_progress_msg_active:
             if current_time - self.max_progress_msg_start_time >= 4000:
@@ -1351,7 +1698,16 @@ class GameApp:
             pygame.display.flip()
             return
 
-        if self.state in ('MAIN_MENU', 'SETTINGS', 'PROGRESS'):
+        if self.state == 'LOGIN':
+            if self.bg_image:
+                self.screen.blit(self.bg_image, (0, 0))
+            else:
+                self.screen.fill(DEEP_GREEN)
+
+            self.login_screen.draw(self.screen)
+            self.btn_exit.draw(self.screen)
+
+        elif self.state in ('MAIN_MENU', 'SETTINGS', 'PROGRESS'):
             if self.bg_image:
                 self.screen.blit(self.bg_image, (0, 0))
             else:
@@ -1363,6 +1719,12 @@ class GameApp:
 
             self.screen.blit(title_shadow, (title_rect.x + 2, title_rect.y + 2))
             self.screen.blit(title_surf, title_rect)
+
+            if self.current_user:
+                user_surf = self.fonts['medium'].render(self.current_user, True, WHITE)
+                user_shadow = self.fonts['medium'].render(self.current_user, True, BLACK)
+                self.screen.blit(user_shadow, (26, 22))
+                self.screen.blit(user_surf, (24, 20))
 
             self.btn_start.draw(self.screen)
             self.btn_settings.draw(self.screen)
@@ -1470,7 +1832,6 @@ class GameApp:
         pygame.display.flip()
 
     def run(self):
-        self.sound_mgr.play_bgm('menu')
         while self.running:
             self.handle_events()
             self.update()
